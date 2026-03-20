@@ -16,7 +16,11 @@ from us_stock_analysis.analysis import (  # noqa: E402
     detect_cross_signal,
 )
 import us_stock_analysis.provider as provider_module  # noqa: E402
-from us_stock_analysis.cli import _render_markdown, build_parser  # noqa: E402
+from us_stock_analysis.cli import (  # noqa: E402
+    _render_markdown,
+    _resolve_symbols,
+    build_parser,
+)
 from us_stock_analysis.models import QuoteSnapshot  # noqa: E402
 from us_stock_analysis.provider import (  # noqa: E402
     AlphaVantageClient,
@@ -45,6 +49,25 @@ def test_parse_stock_list_supports_comments_commas_and_dedup(tmp_path) -> None:
     stock_list.write_text("aapl, msft\n# skip\nnvda\nAAPL\n", encoding="utf-8")
 
     assert parse_stock_list(stock_list) == ["AAPL", "MSFT", "NVDA"]
+
+
+def test_resolve_symbols_prefers_direct_symbol_input_over_stock_list(tmp_path) -> None:
+    stock_list = tmp_path / "stock_list.txt"
+    stock_list.write_text("NVDA\nMETA\n", encoding="utf-8")
+
+    resolved = _resolve_symbols(["aapl", "msft,tsla", "AAPL"], str(stock_list))
+
+    assert resolved == ["AAPL", "MSFT", "TSLA"]
+
+
+def test_resolve_symbols_falls_back_to_local_stock_list_when_external_input_missing(tmp_path, monkeypatch) -> None:
+    stock_list = tmp_path / "stock_list.txt"
+    stock_list.write_text("NVDA\nMETA\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    resolved = _resolve_symbols(None, None)
+
+    assert resolved == ["NVDA", "META"]
 
 
 def test_build_analysis_identifies_bullish_volume_expansion_and_overbought() -> None:
@@ -172,9 +195,13 @@ def test_create_market_data_provider_prefers_yfinance_before_alphavantage(monkey
 def test_cli_parser_only_supports_table_and_markdown_output() -> None:
     parser = build_parser()
     output_action = next(action for action in parser._actions if action.dest == "output")
+    stock_list_action = next(action for action in parser._actions if action.dest == "stock_list")
+    symbols_action = next(action for action in parser._actions if action.dest == "symbols")
 
     assert output_action.choices == ("table", "markdown")
     assert output_action.default == "markdown"
+    assert stock_list_action.default is None
+    assert symbols_action.nargs == "*"
 
 
 def test_alphavantage_client_parses_daily_and_quote_payloads() -> None:

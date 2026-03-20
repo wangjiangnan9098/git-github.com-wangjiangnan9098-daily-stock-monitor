@@ -39,9 +39,15 @@ SOURCE_LABELS = {
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Analyze US stocks from a stock list file.")
     parser.add_argument(
+        "--symbols",
+        nargs="*",
+        default=None,
+        help="Optional ticker symbols passed directly, for example: --symbols AAPL MSFT or --symbols AAPL,MSFT",
+    )
+    parser.add_argument(
         "--stock-list",
-        default="stock_list.txt",
-        help="Path to stock list file. Supports one ticker per line or comma-separated values.",
+        default=None,
+        help="Optional path to stock list file. If omitted, the tool falls back to ./stock_list.txt.",
     )
     parser.add_argument(
         "--history-days",
@@ -74,9 +80,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     load_dotenv(args.dotenv)
-    symbols = parse_stock_list(args.stock_list)
+    symbols = _resolve_symbols(args.symbols, args.stock_list)
     if not symbols:
-        raise SystemExit("No tickers found in the stock list file.")
+        raise SystemExit("No tickers found from --symbols or stock list input.")
+
+    input_label = _build_input_label(args.symbols, args.stock_list, symbols)
 
     provider = create_market_data_provider()
     analyses = []
@@ -101,11 +109,44 @@ def main(argv: list[str] | None = None) -> int:
             errors.append({"symbol": symbol, "error": str(exc)})
 
     if args.output == "markdown":
-        print(_render_markdown(analyses, errors, stock_list_path=args.stock_list))
+        print(_render_markdown(analyses, errors, stock_list_path=input_label))
     else:
         print(_render_table(analyses, errors))
 
     return 0 if analyses else 1
+
+
+def _resolve_symbols(raw_symbols: list[str] | None, stock_list_path: str | None) -> list[str]:
+    symbols = _parse_symbol_inputs(raw_symbols)
+    if symbols:
+        return symbols
+
+    resolved_path = stock_list_path or "stock_list.txt"
+    return parse_stock_list(resolved_path)
+
+
+def _parse_symbol_inputs(raw_symbols: list[str] | None) -> list[str]:
+    if not raw_symbols:
+        return []
+
+    symbols: list[str] = []
+    for raw_value in raw_symbols:
+        for raw_symbol in raw_value.replace(",", "\n").splitlines():
+            symbol = raw_symbol.strip().upper()
+            if symbol and symbol not in symbols:
+                symbols.append(symbol)
+    return symbols
+
+
+def _build_input_label(
+    raw_symbols: list[str] | None,
+    stock_list_path: str | None,
+    resolved_symbols: list[str],
+) -> str:
+    direct_symbols = _parse_symbol_inputs(raw_symbols)
+    if direct_symbols:
+        return f"direct:{','.join(direct_symbols)}"
+    return stock_list_path or "stock_list.txt"
 
 
 def _render_table(analyses, errors) -> str:
