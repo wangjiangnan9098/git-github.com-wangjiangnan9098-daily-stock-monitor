@@ -1,0 +1,4 @@
+interface:
+  display_name: "US Stock Analysis"
+  short_description: "Analyze US stocks from daily candles"
+  default_prompt: "Use $us-stock-analysis to analyze the tickers in stock_list.txt with Alpha Vantage and yfinance fallback, then produce a markdown report with price, trend, RSI, volume, and cross signals."
